@@ -1,4 +1,4 @@
-import DocsGeneratorInterface from '@/components/DocsGeneratorInterface';
+import DocsGeneratorInterface from "@/components/DocsGeneratorInterface";
 
 export default function Home() {
   return (
@@ -9,11 +9,12 @@ export default function Home() {
             🤖 AI Documentation Generator
           </h1>
           <p className="text-lg text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">
-            Automatically generate comprehensive documentation for any GitHub repository using AI. 
-            Just provide a repository URL and let AI create detailed docs for your codebase.
+            Automatically generate comprehensive documentation for any GitHub
+            repository using AI. Just provide a repository URL and let AI create
+            detailed docs for your codebase.
           </p>
         </div>
-        
+
         <DocsGeneratorInterface />
       </div>
     </div>

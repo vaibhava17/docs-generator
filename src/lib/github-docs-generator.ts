@@ -411,13 +411,16 @@ Generate a new token at: https://github.com/settings/tokens/new`);
   async createDocumentationBranch(
     branchName: string = "docs-generation",
     mainBranch: string = "main"
-  ): Promise<{
-    isExistingBranch: boolean;
-    hasExistingDocs: boolean;
-    changedFiles: string[];
-    newFiles: string[];
-    needsUpdate: boolean;
-  }> {
+  ): Promise<
+    | {
+        isExistingBranch: boolean;
+        hasExistingDocs: boolean;
+        changedFiles: string[];
+        newFiles: string[];
+        needsUpdate: boolean;
+      }
+    | undefined
+  > {
     console.log(`🌿 Setting up documentation branch: ${branchName}`);
 
     try {
@@ -1401,7 +1404,7 @@ Error details: ${error.message}`);
       const branchInfo = await this.createDocumentationBranch(branchName);
 
       // Check if no updates are needed
-      if (branchInfo.hasExistingDocs && !branchInfo.needsUpdate) {
+      if (branchInfo?.hasExistingDocs && !branchInfo.needsUpdate) {
         console.log("✅ Repository documentation is already up to date!");
         console.log(
           "📚 No changes detected since last documentation generation"
@@ -1416,12 +1419,12 @@ Error details: ${error.message}`);
       const { sourceFiles, existingDocs, isIncremental } =
         await this.findSourceFiles(
           repoConfig.targetPath,
-          branchInfo.changedFiles,
-          branchInfo.newFiles
+          branchInfo?.changedFiles,
+          branchInfo?.newFiles
         );
 
       if (sourceFiles.length === 0) {
-        if (branchInfo.hasExistingDocs) {
+        if (branchInfo?.hasExistingDocs) {
           console.log(
             "✅ All source files already have up-to-date documentation!"
           );
@@ -1440,7 +1443,7 @@ Error details: ${error.message}`);
       if (isIncremental) {
         console.log(`🔄 Incremental documentation update mode`);
         console.log(
-          `📝 ${branchInfo.changedFiles.length} changed files, ${branchInfo.newFiles.length} new files to process`
+          `📝 ${branchInfo?.changedFiles.length} changed files, ${branchInfo?.newFiles.length} new files to process`
         );
       } else {
         console.log(`📝 Full documentation generation mode`);
@@ -1466,9 +1469,9 @@ Error details: ${error.message}`);
 
       for (let i = 0; i < sourceFiles.length; i++) {
         const filePath = sourceFiles[i];
-        const action = branchInfo.changedFiles.includes(filePath)
+        const action = branchInfo?.changedFiles.includes(filePath)
           ? "Updating"
-          : branchInfo.newFiles.includes(filePath)
+          : branchInfo?.newFiles.includes(filePath)
           ? "Creating"
           : "Processing";
 
@@ -1514,9 +1517,9 @@ Error details: ${error.message}`);
 
       if (isIncremental) {
         console.log(
-          `🔄 Updated: ${branchInfo.changedFiles.length} changed files`
+          `🔄 Updated: ${branchInfo?.changedFiles.length} changed files`
         );
-        console.log(`🆕 Added: ${branchInfo.newFiles.length} new files`);
+        console.log(`🆕 Added: ${branchInfo?.newFiles.length} new files`);
         console.log(
           `✅ Successfully processed: ${documentedFiles.length} files`
         );

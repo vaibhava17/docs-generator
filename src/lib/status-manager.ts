@@ -2,7 +2,16 @@
 // In a production app, this would use Redis or a database
 
 interface GenerationStatus {
-  status: 'idle' | 'cloning' | 'analyzing' | 'generating' | 'committing' | 'completed' | 'error' | 'up-to-date' | 'incremental';
+  status:
+    | "idle"
+    | "cloning"
+    | "analyzing"
+    | "generating"
+    | "committing"
+    | "completed"
+    | "error"
+    | "up-to-date"
+    | "incremental";
   progress: number;
   message: string;
   logs: string[];
@@ -17,13 +26,13 @@ interface GenerationStatus {
 }
 
 let currentStatus: GenerationStatus = {
-  status: 'idle',
+  status: "idle",
   progress: 0,
-  message: '',
+  message: "",
   logs: [],
   documentedFiles: 0,
   totalFiles: 0,
-  branchUrl: undefined
+  branchUrl: undefined,
 };
 
 export function getStatus(): GenerationStatus {
@@ -47,12 +56,12 @@ export function updateStatus(update: Partial<GenerationStatus>) {
 
 export function resetStatus() {
   currentStatus = {
-    status: 'idle',
+    status: "idle",
     progress: 0,
-    message: '',
+    message: "",
     logs: [],
     documentedFiles: 0,
     totalFiles: 0,
-    branchUrl: undefined
+    branchUrl: undefined,
   };
 }
