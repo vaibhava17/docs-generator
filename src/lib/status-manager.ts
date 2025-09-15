@@ -2,13 +2,18 @@
 // In a production app, this would use Redis or a database
 
 interface GenerationStatus {
-  status: 'idle' | 'cloning' | 'analyzing' | 'generating' | 'committing' | 'completed' | 'error';
+  status: 'idle' | 'cloning' | 'analyzing' | 'generating' | 'committing' | 'completed' | 'error' | 'up-to-date' | 'incremental';
   progress: number;
   message: string;
   logs: string[];
   documentedFiles: number;
   totalFiles: number;
   branchUrl?: string;
+  isExistingBranch?: boolean;
+  hasExistingDocs?: boolean;
+  changedFiles?: number;
+  newFiles?: number;
+  isIncremental?: boolean;
 }
 
 let currentStatus: GenerationStatus = {

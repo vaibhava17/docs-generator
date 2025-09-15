@@ -10,16 +10,21 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Github, FileText, Settings, Play, Download, Eye, AlertCircle, CheckCircle, Clock, Zap, TestTube } from 'lucide-react';
+import { Github, FileText, Settings, Play, Download, Eye, AlertCircle, CheckCircle, Clock, Zap, TestTube, Trash2 } from 'lucide-react';
 
 interface GenerationStatus {
-  status: 'idle' | 'cloning' | 'analyzing' | 'generating' | 'committing' | 'completed' | 'error';
+  status: 'idle' | 'cloning' | 'analyzing' | 'generating' | 'committing' | 'completed' | 'error' | 'up-to-date' | 'incremental';
   progress: number;
   message: string;
   logs: string[];
   documentedFiles: number;
   totalFiles: number;
   branchUrl?: string;
+  isExistingBranch?: boolean;
+  hasExistingDocs?: boolean;
+  changedFiles?: number;
+  newFiles?: number;
+  isIncremental?: boolean;
 }
 
 interface FormData {
@@ -64,6 +69,7 @@ export default function DocsGeneratorInterface() {
     repositoryType?: 'public' | 'private',
     scopesRequired?: string[]
   } | null>(null);
+  const [cleaningUp, setCleaningUp] = useState(false);
 
   const handleInputChange = (field: keyof FormData, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -276,6 +282,33 @@ export default function DocsGeneratorInterface() {
     }
   };
 
+  const handleCleanup = async () => {
+    if (!confirm('This will clean up all temporary repository files. Are you sure?')) {
+      return;
+    }
+
+    setCleaningUp(true);
+    try {
+      const response = await fetch('/api/cleanup-temp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      const result = await response.json();
+      
+      if (response.ok) {
+        alert('✅ Temporary repositories cleaned successfully!');
+      } else {
+        alert(`❌ Cleanup failed: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Cleanup error:', error);
+      alert('❌ Failed to cleanup temporary repositories. Please try again.');
+    } finally {
+      setCleaningUp(false);
+    }
+  };
+
   const getStatusIcon = () => {
     switch (status.status) {
       case 'idle': return <FileText className="w-5 h-5" />;
@@ -284,6 +317,8 @@ export default function DocsGeneratorInterface() {
       case 'generating': return <Zap className="w-5 h-5 animate-bounce" />;
       case 'committing': return <Clock className="w-5 h-5 animate-spin" />;
       case 'completed': return <CheckCircle className="w-5 h-5 text-green-500" />;
+      case 'up-to-date': return <CheckCircle className="w-5 h-5 text-blue-500" />;
+      case 'incremental': return <Zap className="w-5 h-5 text-orange-500" />;
       case 'error': return <AlertCircle className="w-5 h-5 text-red-500" />;
       default: return <FileText className="w-5 h-5" />;
     }
@@ -292,6 +327,8 @@ export default function DocsGeneratorInterface() {
   const getStatusColor = () => {
     switch (status.status) {
       case 'completed': return 'bg-green-500';
+      case 'up-to-date': return 'bg-blue-500';
+      case 'incremental': return 'bg-orange-500';
       case 'error': return 'bg-red-500';
       case 'generating': return 'bg-blue-500';
       default: return 'bg-primary';
@@ -525,15 +562,52 @@ export default function DocsGeneratorInterface() {
             </div>
           </div>
 
+          {/* Smart Documentation Info */}
+          <div className="border-t pt-6">
+            <h3 className="text-lg font-semibold mb-4">Smart Documentation Features</h3>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
+              <div className="flex items-start gap-3">
+                <Zap className="w-5 h-5 text-blue-600 mt-0.5" />
+                <div className="space-y-2">
+                  <h4 className="font-semibold text-blue-800">Incremental Updates</h4>
+                  <p className="text-sm text-blue-700">
+                    The system automatically detects existing documentation branches and only processes changed or new files, 
+                    making subsequent runs much faster.
+                  </p>
+                </div>
+              </div>
+              
+              <div className="ml-8 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-xs bg-green-50 border-green-200 text-green-700">
+                    ✓ Existing Branch Detection
+                  </Badge>
+                  <Badge variant="outline" className="text-xs bg-orange-50 border-orange-200 text-orange-700">
+                    ⚡ Changed Files Only
+                  </Badge>
+                  <Badge variant="outline" className="text-xs bg-blue-50 border-blue-200 text-blue-700">
+                    🔄 Auto Merge from Main
+                  </Badge>
+                </div>
+                <p className="text-xs text-blue-600">
+                  First run: Documents all files • Subsequent runs: Only updates changed files
+                </p>
+                <p className="text-xs text-blue-600 mt-1">
+                  💡 Temporary files are automatically cleaned after successful completion
+                </p>
+              </div>
+            </div>
+          </div>
+
           {/* Advanced Options */}
           <div className="border-t pt-6">
             <h3 className="text-lg font-semibold mb-4">Advanced Options</h3>
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label htmlFor="overwrite">Overwrite Existing Documentation</Label>
+                  <Label htmlFor="overwrite">Force Full Regeneration</Label>
                   <p className="text-sm text-muted-foreground">
-                    Replace existing documentation files if they exist
+                    Regenerate all documentation files instead of incremental updates
                   </p>
                 </div>
                 <Switch
@@ -572,6 +646,15 @@ export default function DocsGeneratorInterface() {
               <Play className="w-4 h-4" />
               Generate Documentation
             </Button>
+            <Button 
+              onClick={handleCleanup} 
+              disabled={cleaningUp}
+              variant="outline" 
+              className="flex items-center gap-2 text-orange-600 hover:text-orange-700"
+            >
+              <Trash2 className="w-4 h-4" />
+              {cleaningUp ? 'Cleaning...' : 'Clean Temp Files'}
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -609,20 +692,73 @@ export default function DocsGeneratorInterface() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               {getStatusIcon()}
-              Documentation Generation {status.status === 'error' ? 'Failed' : 'Progress'}
+              {status.status === 'up-to-date' ? 'Documentation Up to Date' :
+               status.status === 'incremental' ? 'Incremental Update' :
+               status.status === 'error' ? 'Generation Failed' : 
+               'Documentation Generation'}
             </CardTitle>
             <CardDescription>
               {status.message}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span>Progress</span>
-                <span>{status.progress}%</span>
+            {/* Smart Branch Status */}
+            {(status.isExistingBranch || status.hasExistingDocs || status.isIncremental) && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-blue-600" />
+                  <span className="font-semibold text-blue-800">Smart Documentation Mode</span>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {status.isExistingBranch && (
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="w-4 h-4 text-green-600" />
+                      <span className="text-sm text-blue-700">Existing branch detected</span>
+                    </div>
+                  )}
+                  
+                  {status.hasExistingDocs && (
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-green-600" />
+                      <span className="text-sm text-blue-700">Documentation found</span>
+                    </div>
+                  )}
+                  
+                  {status.isIncremental && (
+                    <div className="flex items-center gap-2">
+                      <Zap className="w-4 h-4 text-orange-600" />
+                      <span className="text-sm text-blue-700">Incremental mode</span>
+                    </div>
+                  )}
+                </div>
+
+                {(status.changedFiles !== undefined || status.newFiles !== undefined) && (
+                  <div className="flex gap-4">
+                    {status.changedFiles !== undefined && status.changedFiles > 0 && (
+                      <Badge variant="outline" className="bg-orange-50 border-orange-200 text-orange-700">
+                        🔄 {status.changedFiles} changed files
+                      </Badge>
+                    )}
+                    {status.newFiles !== undefined && status.newFiles > 0 && (
+                      <Badge variant="outline" className="bg-green-50 border-green-200 text-green-700">
+                        🆕 {status.newFiles} new files
+                      </Badge>
+                    )}
+                  </div>
+                )}
               </div>
-              <Progress value={status.progress} className={getStatusColor()} />
-            </div>
+            )}
+
+            {status.status !== 'up-to-date' && (
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span>Progress</span>
+                  <span>{status.progress}%</span>
+                </div>
+                <Progress value={status.progress} className={getStatusColor()} />
+              </div>
+            )}
 
             {status.totalFiles > 0 && (
               <div className="flex gap-4">
@@ -632,6 +768,11 @@ export default function DocsGeneratorInterface() {
                 <Badge variant="default">
                   Documented: {status.documentedFiles}
                 </Badge>
+                {status.isIncremental && (
+                  <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700">
+                    ⚡ Incremental
+                  </Badge>
+                )}
               </div>
             )}
 
@@ -648,7 +789,7 @@ export default function DocsGeneratorInterface() {
               </div>
             )}
 
-            {status.status === 'completed' && status.branchUrl && (
+            {(status.status === 'completed' || status.status === 'up-to-date') && status.branchUrl && (
               <div className="flex gap-4">
                 <Button asChild variant="default">
                   <a href={status.branchUrl} target="_blank" rel="noopener noreferrer">
@@ -660,6 +801,22 @@ export default function DocsGeneratorInterface() {
                   <Download className="w-4 h-4 mr-2" />
                   Download Documentation
                 </Button>
+              </div>
+            )}
+
+            {status.status === 'up-to-date' && (
+              <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <CheckCircle className="w-5 h-5 text-green-600" />
+                  <h4 className="font-semibold text-green-800">Documentation Already Up to Date!</h4>
+                </div>
+                <p className="text-sm text-green-700 mb-3">
+                  No changes detected since the last documentation generation. Your docs are current with the latest code.
+                </p>
+                <div className="flex items-center gap-2 text-xs text-green-600">
+                  <Zap className="w-4 h-4" />
+                  <span>Smart incremental updates saved you time by detecting no changes needed</span>
+                </div>
               </div>
             )}
 

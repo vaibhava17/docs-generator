@@ -355,8 +355,14 @@ Generate a new token at: https://github.com/settings/tokens/new`);
     return url;
   }
 
-  async createDocumentationBranch(branchName: string = 'docs-generation'): Promise<void> {
-    console.log(`🌿 Creating documentation branch: ${branchName}`);
+  async createDocumentationBranch(branchName: string = 'docs-generation', mainBranch: string = 'main'): Promise<{
+    isExistingBranch: boolean,
+    hasExistingDocs: boolean,
+    changedFiles: string[],
+    newFiles: string[],
+    needsUpdate: boolean
+  }> {
+    console.log(`🌿 Setting up documentation branch: ${branchName}`);
     
     try {
       // Fetch all remote branches to get the latest state
@@ -366,9 +372,10 @@ Generate a new token at: https://github.com/settings/tokens/new`);
       const branches = await this.git.branch(['-a']);
       const localBranchExists = branches.all.some(branch => branch === branchName);
       const remoteBranchExists = branches.all.some(branch => branch === `remotes/origin/${branchName}`);
+      const isExistingBranch = localBranchExists || remoteBranchExists;
 
       if (remoteBranchExists) {
-        console.log(`📋 Remote branch ${branchName} exists, checking out and pulling latest...`);
+        console.log(`📋 Found existing remote docs branch: ${branchName}`);
         if (localBranchExists) {
           await this.git.checkout(branchName);
           await this.git.pull('origin', branchName);
@@ -376,58 +383,258 @@ Generate a new token at: https://github.com/settings/tokens/new`);
           // Create local branch from remote
           await this.git.checkout(['-b', branchName, `origin/${branchName}`]);
         }
+        
+        // Check if this branch has existing documentation
+        const hasExistingDocs = await this.hasExistingDocumentation();
+        
+        if (hasExistingDocs) {
+          console.log(`📚 Found existing documentation in branch`);
+          
+          // Merge latest changes from main branch
+          const { changedFiles, newFiles, needsUpdate } = await this.mergeFromMainBranch(mainBranch, branchName);
+          
+          return {
+            isExistingBranch: true,
+            hasExistingDocs: true,
+            changedFiles,
+            newFiles,
+            needsUpdate
+          };
+        }
       } else if (localBranchExists) {
-        console.log(`📋 Local branch ${branchName} exists, checking out...`);
+        console.log(`📋 Found local docs branch: ${branchName}`);
         await this.git.checkout(branchName);
       } else {
-        console.log(`📋 Creating new branch: ${branchName}`);
+        console.log(`📋 Creating new documentation branch: ${branchName}`);
         await this.git.checkoutLocalBranch(branchName);
       }
       
       console.log(`✅ Switched to branch: ${branchName}`);
+      
+      return {
+        isExistingBranch,
+        hasExistingDocs: false,
+        changedFiles: [],
+        newFiles: [],
+        needsUpdate: true
+      };
     } catch (error) {
-      console.error(`❌ Error creating/switching to branch:`, error);
+      console.error(`❌ Error setting up documentation branch:`, error);
       throw error;
     }
   }
 
-  async findSourceFiles(targetPath?: string): Promise<{ sourceFiles: string[], existingDocs: string[] }> {
+  private async hasExistingDocumentation(): Promise<boolean> {
+    try {
+      const docsDir = path.join(this.repoPath, 'docs');
+      const indexFile = path.join(this.repoPath, 'DOCUMENTATION_INDEX.md');
+      
+      const hasDocs = await fs.pathExists(docsDir);
+      const hasIndex = await fs.pathExists(indexFile);
+      
+      if (hasDocs) {
+        // Check if docs directory has any .md files
+        const files = await glob('**/*.md', { cwd: docsDir });
+        return files.length > 0;
+      }
+      
+      return hasIndex;
+    } catch (error) {
+      console.warn('Warning: Could not check for existing documentation:', error);
+      return false;
+    }
+  }
+
+  private async mergeFromMainBranch(mainBranch: string, docsBranch: string): Promise<{
+    changedFiles: string[],
+    newFiles: string[],
+    needsUpdate: boolean
+  }> {
+    try {
+      console.log(`🔄 Merging latest changes from ${mainBranch} into ${docsBranch}`);
+      
+      // Get the last commit hash when docs were generated
+      const lastDocsCommit = await this.getLastDocumentationCommit();
+      
+      // Fetch latest from main branch
+      await this.git.fetch('origin', mainBranch);
+      
+      // Get list of files changed since last documentation update
+      const changedFiles: string[] = [];
+      const newFiles: string[] = [];
+      
+      if (lastDocsCommit) {
+        console.log(`📊 Checking changes since last docs update: ${lastDocsCommit.slice(0, 8)}`);
+        
+        // Get diff between last docs commit and current main
+        const diff = await this.git.diff([
+          `${lastDocsCommit}...origin/${mainBranch}`,
+          '--name-status'
+        ]);
+        
+        const diffLines = diff.split('\n').filter(line => line.trim());
+        
+        for (const line of diffLines) {
+          const [status, filePath] = line.split('\t');
+          if (filePath && this.isSupportedFile(filePath)) {
+            if (status === 'A') {
+              newFiles.push(filePath);
+            } else if (status === 'M' || status === 'D') {
+              changedFiles.push(filePath);
+            }
+          }
+        }
+      } else {
+        console.log(`📊 No previous docs commit found, will analyze all files`);
+      }
+      
+      // Merge from main branch (this will bring in the latest code changes)
+      try {
+        await this.git.merge([`origin/${mainBranch}`, '--no-ff', '--no-commit']);
+        console.log(`✅ Successfully merged changes from ${mainBranch}`);
+        
+        // Check if there are any conflicts
+        const status = await this.git.status();
+        if (status.conflicted.length > 0) {
+          console.log(`⚠️ Found ${status.conflicted.length} merge conflicts, auto-resolving...`);
+          
+          // For docs conflicts, prefer the docs branch version
+          for (const conflictedFile of status.conflicted) {
+            if (conflictedFile.startsWith('docs/') || conflictedFile === 'DOCUMENTATION_INDEX.md') {
+              await this.git.add(conflictedFile);
+            }
+          }
+        }
+        
+        // Commit the merge
+        await this.git.commit(`Merge latest changes from ${mainBranch} branch\n\n🔄 Auto-merge for documentation update`);
+        
+      } catch (mergeError) {
+        console.log(`ℹ️ No merge needed or merge conflicts resolved automatically`);
+      }
+      
+      const needsUpdate = changedFiles.length > 0 || newFiles.length > 0;
+      
+      if (!needsUpdate) {
+        console.log(`✅ No changes detected since last documentation update`);
+      } else {
+        console.log(`📋 Found ${changedFiles.length} changed files and ${newFiles.length} new files`);
+      }
+      
+      return { changedFiles, newFiles, needsUpdate };
+      
+    } catch (error) {
+      console.error(`❌ Error merging from main branch:`, error);
+      throw error;
+    }
+  }
+
+  private async getLastDocumentationCommit(): Promise<string | null> {
+    try {
+      // Look for commits with documentation generator signature
+      const log = await this.git.log(['--grep=📝 Generate documentation', '-1', '--pretty=format:%H']);
+      if (log.latest?.hash) {
+        return log.latest.hash;
+      }
+      
+      // Fallback: look for any commit that modified docs directory
+      const docsLog = await this.git.log(['--', 'docs/', '-1', '--pretty=format:%H']);
+      if (docsLog.latest?.hash) {
+        return docsLog.latest.hash;
+      }
+      
+      return null;
+    } catch (error) {
+      console.warn('Warning: Could not find last documentation commit:', error);
+      return null;
+    }
+  }
+
+  async findSourceFiles(
+    targetPath?: string,
+    changedFiles?: string[],
+    newFiles?: string[]
+  ): Promise<{ sourceFiles: string[], existingDocs: string[], isIncremental: boolean }> {
     const searchPath = targetPath ? path.join(this.repoPath, targetPath) : this.repoPath;
     
     if (!await fs.pathExists(searchPath)) {
       throw new Error(`Target path does not exist: ${searchPath}`);
     }
 
-    console.log(`🔍 Scanning for source files in: ${searchPath}`);
+    const isIncremental = (changedFiles && changedFiles.length > 0) || (newFiles && newFiles.length > 0);
 
-    const allFiles = await glob('**/*', {
-      cwd: searchPath,
-      ignore: this.options.excludePatterns,
-      nodir: true
-    });
+    if (isIncremental) {
+      console.log(`🔍 Scanning changed files for incremental documentation update`);
+      console.log(`📝 Changed files: ${changedFiles?.length || 0}`);
+      console.log(`🆕 New files: ${newFiles?.length || 0}`);
 
-    const sourceFiles: string[] = [];
-    const existingDocs: string[] = [];
+      const sourceFiles: string[] = [];
+      const existingDocs: string[] = [];
 
-    for (const file of allFiles) {
-      const filePath = path.join(searchPath, file);
-      const relativePath = path.relative(this.repoPath, filePath);
-      
-      if (this.isSupportedFile(file)) {
-        if (await this.documentationExists(relativePath)) {
-          if (this.options.overwrite) {
-            sourceFiles.push(relativePath);
-          } else {
-            existingDocs.push(relativePath);
+      // Process changed files
+      if (changedFiles) {
+        for (const file of changedFiles) {
+          const fullPath = path.join(this.repoPath, file);
+          if (await fs.pathExists(fullPath) && this.isSupportedFile(file)) {
+            if (await this.documentationExists(file)) {
+              if (this.options.overwrite) {
+                sourceFiles.push(file);
+              } else {
+                // For incremental updates, always update existing docs for changed files
+                sourceFiles.push(file);
+              }
+            } else {
+              sourceFiles.push(file);
+            }
           }
-        } else {
-          sourceFiles.push(relativePath);
         }
       }
-    }
 
-    console.log(`📊 Found ${sourceFiles.length} files to document, ${existingDocs.length} with existing docs`);
-    return { sourceFiles: sourceFiles.sort(), existingDocs: existingDocs.sort() };
+      // Process new files
+      if (newFiles) {
+        for (const file of newFiles) {
+          const fullPath = path.join(this.repoPath, file);
+          if (await fs.pathExists(fullPath) && this.isSupportedFile(file)) {
+            sourceFiles.push(file);
+          }
+        }
+      }
+
+      console.log(`📊 Incremental update: ${sourceFiles.length} files to document`);
+      return { sourceFiles: sourceFiles.sort(), existingDocs: existingDocs.sort(), isIncremental: true };
+    } else {
+      // Full scan (original logic)
+      console.log(`🔍 Scanning all source files in: ${searchPath}`);
+
+      const allFiles = await glob('**/*', {
+        cwd: searchPath,
+        ignore: this.options.excludePatterns,
+        nodir: true
+      });
+
+      const sourceFiles: string[] = [];
+      const existingDocs: string[] = [];
+
+      for (const file of allFiles) {
+        const filePath = path.join(searchPath, file);
+        const relativePath = path.relative(this.repoPath, filePath);
+        
+        if (this.isSupportedFile(file)) {
+          if (await this.documentationExists(relativePath)) {
+            if (this.options.overwrite) {
+              sourceFiles.push(relativePath);
+            } else {
+              existingDocs.push(relativePath);
+            }
+          } else {
+            sourceFiles.push(relativePath);
+          }
+        }
+      }
+
+      console.log(`📊 Full scan: ${sourceFiles.length} files to document, ${existingDocs.length} with existing docs`);
+      return { sourceFiles: sourceFiles.sort(), existingDocs: existingDocs.sort(), isIncremental: false };
+    }
   }
 
   private isSupportedFile(filePath: string): boolean {
@@ -920,45 +1127,107 @@ Error details: ${error.message}`);
     return this.repoPath;
   }
 
-  async cleanup(): Promise<void> {
-    if (this.repoPath && await fs.pathExists(this.repoPath)) {
-      console.log(`🧹 Cleaning up temporary files...`);
-      await fs.remove(this.repoPath);
-      console.log('✅ Cleanup completed');
+  async cleanup(force: boolean = false): Promise<void> {
+    try {
+      if (this.repoPath && await fs.pathExists(this.repoPath)) {
+        console.log(`🧹 Cleaning up temporary repository: ${path.basename(this.repoPath)}`);
+        await fs.remove(this.repoPath);
+        console.log('✅ Repository cleanup completed');
+      }
+
+      // Clean up the entire temp-repos directory if it's empty or if forced
+      const tempDir = path.join(process.cwd(), 'temp-repos');
+      if (await fs.pathExists(tempDir)) {
+        try {
+          const items = await fs.readdir(tempDir);
+          if (items.length === 0 || force) {
+            console.log(`🧹 Cleaning up temp-repos directory...`);
+            await fs.remove(tempDir);
+            console.log('✅ Temp-repos directory cleaned');
+          } else {
+            console.log(`ℹ️ Temp-repos directory contains ${items.length} items, keeping directory`);
+          }
+        } catch (error) {
+          console.warn('Warning: Could not clean temp-repos directory:', error);
+        }
+      }
+    } catch (error) {
+      console.warn('Warning: Cleanup encountered an issue:', error);
+    }
+  }
+
+  async forceCleanupAllTempRepos(): Promise<void> {
+    try {
+      const tempDir = path.join(process.cwd(), 'temp-repos');
+      if (await fs.pathExists(tempDir)) {
+        console.log(`🧹 Force cleaning entire temp-repos directory...`);
+        await fs.remove(tempDir);
+        console.log('✅ All temporary repositories cleaned');
+      } else {
+        console.log('ℹ️ No temp-repos directory to clean');
+      }
+    } catch (error) {
+      console.error('❌ Error during force cleanup:', error);
+      throw error;
     }
   }
 
   async run(repoConfig: RepoConfig): Promise<void> {
     try {
-      console.log('🚀 Starting GitHub documentation generation...');
+      console.log('🚀 Starting smart GitHub documentation generation...');
       
       // Clone repository
       await this.cloneRepository(repoConfig);
       
-      // Create documentation branch
+      // Smart documentation branch setup
       const branchName = repoConfig.branch || 'docs-generation';
-      await this.createDocumentationBranch(branchName);
+      const branchInfo = await this.createDocumentationBranch(branchName);
       
-      // Find source files
-      const { sourceFiles, existingDocs } = await this.findSourceFiles(repoConfig.targetPath);
+      // Check if no updates are needed
+      if (branchInfo.hasExistingDocs && !branchInfo.needsUpdate) {
+        console.log('✅ Repository documentation is already up to date!');
+        console.log('📚 No changes detected since last documentation generation');
+        console.log(`🌿 Existing documentation is available on the '${branchName}' branch`);
+        return;
+      }
+      
+      // Smart file discovery based on changes
+      const { sourceFiles, existingDocs, isIncremental } = await this.findSourceFiles(
+        repoConfig.targetPath,
+        branchInfo.changedFiles,
+        branchInfo.newFiles
+      );
       
       if (sourceFiles.length === 0) {
-        console.log('✅ All source files already have documentation!');
-        if (existingDocs.length > 0) {
-          console.log('🔄 Updating documentation index...');
-          await this.generateIndex(existingDocs);
+        if (branchInfo.hasExistingDocs) {
+          console.log('✅ All source files already have up-to-date documentation!');
+          if (existingDocs.length > 0) {
+            console.log('🔄 Updating documentation index...');
+            await this.generateIndex(existingDocs);
+            await this.commitAndPush(branchName, repoConfig);
+          }
+        } else {
+          console.log('✅ No supported source files found to document');
         }
         return;
       }
 
-      console.log(`📝 Files to be documented: ${sourceFiles.length}`);
+      // Log update type and files
+      if (isIncremental) {
+        console.log(`🔄 Incremental documentation update mode`);
+        console.log(`📝 ${branchInfo.changedFiles.length} changed files, ${branchInfo.newFiles.length} new files to process`);
+      } else {
+        console.log(`📝 Full documentation generation mode`);
+        console.log(`📝 Files to be documented: ${sourceFiles.length}`);
+      }
+      
       if (existingDocs.length > 0) {
         console.log(`✅ Files with existing documentation: ${existingDocs.length}`);
       }
 
       if (!this.options.force) {
-        // In a real CLI, you would prompt for confirmation here
-        console.log('🔄 Proceeding with documentation generation...');
+        const updateType = isIncremental ? 'incremental update' : 'full generation';
+        console.log(`🔄 Proceeding with ${updateType}...`);
       }
 
       // Generate documentation for each file
@@ -967,7 +1236,10 @@ Error details: ${error.message}`);
 
       for (let i = 0; i < sourceFiles.length; i++) {
         const filePath = sourceFiles[i];
-        console.log(`📄 [${i + 1}/${sourceFiles.length}] Processing: ${filePath}`);
+        const action = branchInfo.changedFiles.includes(filePath) ? 'Updating' : 
+                      branchInfo.newFiles.includes(filePath) ? 'Creating' : 'Processing';
+        
+        console.log(`📄 [${i + 1}/${sourceFiles.length}] ${action}: ${filePath}`);
         
         const doc = await this.generateDocumentation(filePath);
         if (doc) {
@@ -983,18 +1255,34 @@ Error details: ${error.message}`);
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
-      // Generate index
+      // Generate/update index
       if (documentedFiles.length > 0) {
-        await this.generateIndex(documentedFiles);
+        if (isIncremental) {
+          // For incremental updates, merge with existing index
+          await this.generateIndex(documentedFiles);
+        } else {
+          // For full generation, create complete index
+          await this.generateIndex([...documentedFiles, ...existingDocs]);
+        }
       }
 
       // Commit and push changes
+      const commitType = isIncremental ? 'incremental' : 'full';
       await this.commitAndPush(branchName, repoConfig);
 
       // Summary
-      console.log('\n' + '='.repeat(50));
-      console.log('🎉 GitHub documentation generation completed!');
-      console.log(`✅ Successfully documented: ${documentedFiles.length} files`);
+      console.log('\n' + '='.repeat(60));
+      const updateMode = isIncremental ? 'Incremental documentation update' : 'Full documentation generation';
+      console.log(`🎉 ${updateMode} completed!`);
+      
+      if (isIncremental) {
+        console.log(`🔄 Updated: ${branchInfo.changedFiles.length} changed files`);
+        console.log(`🆕 Added: ${branchInfo.newFiles.length} new files`);
+        console.log(`✅ Successfully processed: ${documentedFiles.length} files`);
+      } else {
+        console.log(`✅ Successfully documented: ${documentedFiles.length} files`);
+      }
+      
       console.log(`❌ Failed to document: ${failedFiles.length} files`);
       
       if (failedFiles.length > 0) {
@@ -1009,12 +1297,19 @@ Error details: ${error.message}`);
       console.log(`📁 All documentation files are saved in the 'docs/' directory`);
       console.log(`🌿 Documentation is available on the '${branchName}' branch`);
       
+      if (isIncremental) {
+        console.log(`\n💡 Next time you run this, only new changes will be processed!`);
+      }
+      
     } catch (error) {
       console.error('❌ Fatal error:', error);
-      throw error;
-    } finally {
-      // Always cleanup
+      // On error, do regular cleanup (keep temp dir in case user wants to debug)
       await this.cleanup();
+      throw error;
     }
+    
+    // On successful completion, force cleanup to remove temp-repos directory
+    console.log('🎉 Documentation generation completed successfully!');
+    await this.cleanup(true); // Force cleanup on success
   }
 }
