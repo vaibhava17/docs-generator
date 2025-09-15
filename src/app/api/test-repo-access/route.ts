@@ -19,7 +19,31 @@ export async function POST(request: NextRequest) {
 
     console.log(`🔍 Testing access to repository: ${owner}/${cleanRepoName}`);
 
-    // First check if repository exists publicly (without token)
+    // First validate token and check scopes
+    const userResponse = await fetch('https://api.github.com/user', {
+      headers: {
+        'Authorization': `Bearer ${githubToken}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'docs-generator'
+      }
+    });
+
+    if (!userResponse.ok) {
+      if (userResponse.status === 401) {
+        return NextResponse.json({ 
+          error: 'Invalid GitHub token. Please check your token format and validity. Token should start with "ghp_" or "github_pat_".' 
+        }, { status: 401 });
+      }
+      return NextResponse.json({ 
+        error: `Failed to validate GitHub token: ${userResponse.status} ${userResponse.statusText}` 
+      }, { status: userResponse.status });
+    }
+
+    // Check token scopes
+    const scopes = userResponse.headers.get('x-oauth-scopes')?.split(', ') || [];
+    console.log(`🔑 Token scopes: ${scopes.join(', ')}`);
+
+    // Check if repository exists publicly (without token)
     const publicCheck = await fetch(`https://api.github.com/repos/${owner}/${cleanRepoName}`, {
       headers: {
         'Accept': 'application/vnd.github.v3+json',
@@ -27,13 +51,30 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    if (!publicCheck.ok && publicCheck.status === 404) {
-      return NextResponse.json({ 
-        error: `Repository '${owner}/${cleanRepoName}' does not exist or is not accessible. Please check the repository name and URL.` 
-      }, { status: 404 });
+    const isPrivateRepo = !publicCheck.ok && publicCheck.status === 404;
+    
+    // Validate scopes based on repository type
+    if (isPrivateRepo) {
+      if (!scopes.includes('repo')) {
+        return NextResponse.json({ 
+          error: `This appears to be a private repository, but your GitHub token does not have the required 'repo' scope. Current scopes: ${scopes.join(', ')}. Please generate a new token with 'repo' scope at: https://github.com/settings/tokens/new`,
+          scopesRequired: ['repo'],
+          currentScopes: scopes,
+          repositoryType: 'private'
+        }, { status: 403 });
+      }
+    } else {
+      if (!scopes.includes('repo') && !scopes.includes('public_repo')) {
+        return NextResponse.json({ 
+          error: `Your GitHub token does not have the required scopes. For public repositories, you need 'public_repo' scope. For private repositories, you need 'repo' scope. Current scopes: ${scopes.join(', ')}. Please generate a new token at: https://github.com/settings/tokens/new`,
+          scopesRequired: isPrivateRepo ? ['repo'] : ['public_repo', 'repo'],
+          currentScopes: scopes,
+          repositoryType: isPrivateRepo ? 'private' : 'public'
+        }, { status: 403 });
+      }
     }
 
-    // Now check with token for permissions
+    // Now check repository access with token
     const response = await fetch(`https://api.github.com/repos/${owner}/${cleanRepoName}`, {
       headers: {
         'Authorization': `Bearer ${githubToken}`,
@@ -55,11 +96,17 @@ export async function POST(request: NextRequest) {
           }, { status: 429 });
         }
         return NextResponse.json({ 
-          error: 'GitHub token does not have sufficient permissions. Ensure your token has "repo" scope for private repositories or "public_repo" scope for public repositories.' 
+          error: `GitHub token does not have sufficient permissions for this repository. For private repositories, your token needs 'repo' scope. For public repositories, your token needs 'public_repo' or 'repo' scope. Current scopes: ${scopes.join(', ')}.`,
+          scopesRequired: isPrivateRepo ? ['repo'] : ['public_repo', 'repo'],
+          currentScopes: scopes,
+          repositoryType: isPrivateRepo ? 'private' : 'public'
         }, { status: 403 });
       } else if (response.status === 404) {
         return NextResponse.json({ 
-          error: 'Repository access denied. This could mean the repository is private and your token does not have access, or you need to be added as a collaborator.' 
+          error: `Repository access denied. This could mean: (1) Repository is private and your token doesn't have the required 'repo' scope, (2) Token doesn't have access to this specific repository, (3) You need to be added as a collaborator, or (4) Repository name is incorrect. Current scopes: ${scopes.join(', ')}.`,
+          scopesRequired: ['repo'],
+          currentScopes: scopes,
+          repositoryType: 'private'
         }, { status: 404 });
       } else {
         return NextResponse.json({ 
@@ -69,6 +116,18 @@ export async function POST(request: NextRequest) {
     }
 
     const repoData = await response.json();
+
+    // Check if user has push access
+    if (!repoData.permissions?.push) {
+      const requiredScope = repoData.private ? 'repo' : 'public_repo';
+      return NextResponse.json({ 
+        error: `Your GitHub token does not have push access to this repository. This is required to commit and push documentation changes. Please ensure: (1) You have push/write access to the repository, (2) Your token has '${requiredScope}' scope, (3) For organization repos, check if you're a member with write access, (4) If the organization uses SSO, authorize your token for SSO.`,
+        permissions: repoData.permissions,
+        scopesRequired: [requiredScope],
+        currentScopes: scopes,
+        repositoryType: repoData.private ? 'private' : 'public'
+      }, { status: 403 });
+    }
 
     console.log(`✅ Repository access test successful for: ${repoData.full_name}`);
 
@@ -84,6 +143,13 @@ export async function POST(request: NextRequest) {
       owner: {
         login: repoData.owner.login,
         type: repoData.owner.type
+      },
+      tokenScopes: scopes,
+      repositoryType: repoData.private ? 'private' : 'public',
+      accessValidation: {
+        scopesValid: true,
+        pushAccess: true,
+        tokenValid: true
       }
     });
 

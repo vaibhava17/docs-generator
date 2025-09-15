@@ -36,14 +36,21 @@ The AI Documentation Generator needs to **push documentation to GitHub repositor
 
 #### For Public Repositories:
 - ✅ `public_repo` - Access public repositories
+- **OR** ✅ `repo` - Full control (works for both public and private)
 
 #### For Private Repositories:
 - ✅ `repo` - Full control of private repositories
   - This includes: `repo:status`, `repo_deployment`, `public_repo`
+  - **⚠️ REQUIRED**: Private repositories MUST have `repo` scope, `public_repo` is not sufficient
 
 #### Additional Recommended Scopes:
 - ✅ `workflow` - Update GitHub Action workflows (if documenting CI/CD)
 - ✅ `read:org` - Read organization membership (for organization repos)
+
+#### ⭐ **Recommended**: Use `repo` scope for all repositories
+- Works with both public and private repositories
+- Simplifies token management
+- Avoids scope-related errors
 
 ### Step 5: Generate and Copy Token
 1. Click **"Generate token"**

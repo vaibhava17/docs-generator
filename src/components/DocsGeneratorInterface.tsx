@@ -57,7 +57,13 @@ export default function DocsGeneratorInterface() {
   const [showPreview, setShowPreview] = useState(false);
   const [previewFiles, setPreviewFiles] = useState<string[]>([]);
   const [testingAccess, setTestingAccess] = useState(false);
-  const [accessTestResult, setAccessTestResult] = useState<{success: boolean, message: string} | null>(null);
+  const [accessTestResult, setAccessTestResult] = useState<{
+    success: boolean, 
+    message: string,
+    tokenScopes?: string[],
+    repositoryType?: 'public' | 'private',
+    scopesRequired?: string[]
+  } | null>(null);
 
   const handleInputChange = (field: keyof FormData, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -94,12 +100,18 @@ export default function DocsGeneratorInterface() {
       if (response.ok) {
         setAccessTestResult({
           success: true,
-          message: `✅ Repository access confirmed! You have ${result.permissions.push ? 'write' : 'read-only'} access to ${result.fullName}.`
+          message: `✅ Repository access confirmed! You have ${result.permissions.push ? 'write' : 'read-only'} access to ${result.fullName} (${result.repositoryType}).`,
+          tokenScopes: result.tokenScopes,
+          repositoryType: result.repositoryType,
+          scopesRequired: result.repositoryType === 'private' ? ['repo'] : ['public_repo', 'repo']
         });
       } else {
         setAccessTestResult({
           success: false,
-          message: `❌ ${result.error || 'Repository access test failed'}`
+          message: `❌ ${result.error || 'Repository access test failed'}`,
+          tokenScopes: result.currentScopes,
+          repositoryType: result.repositoryType,
+          scopesRequired: result.scopesRequired
         });
       }
     } catch (error) {
@@ -320,24 +332,52 @@ export default function DocsGeneratorInterface() {
                 value={formData.githubToken}
                 onChange={(e) => handleInputChange('githubToken', e.target.value)}
               />
-              <div className="text-xs text-muted-foreground space-y-1">
+              <div className="text-xs text-muted-foreground space-y-2">
                 <p>Required to push documentation to any repository.</p>
-                <p><strong>Required token permissions:</strong></p>
-                <ul className="list-disc list-inside ml-2 space-y-1">
-                  <li><code>repo</code> - Full control of private repositories</li>
-                  <li><code>public_repo</code> - Access public repositories</li>
-                  <li><code>workflow</code> - Update GitHub Action workflows (if needed)</li>
-                </ul>
-                <p>
+                
+                <div className="space-y-1">
+                  <p><strong>Token Scope Requirements:</strong></p>
+                  <div className="grid grid-cols-1 gap-2 ml-2">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="destructive" className="text-xs">repo</Badge>
+                      <span>Required for private repositories (full control)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="default" className="text-xs">public_repo</Badge>
+                      <span>Sufficient for public repositories</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary" className="text-xs">workflow</Badge>
+                      <span>Optional - Update GitHub workflows</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="p-2 bg-blue-50 border border-blue-200 rounded">
+                  <p className="text-blue-800 font-semibold text-xs mb-1">💡 Recommendation:</p>
+                  <p className="text-blue-700 text-xs">
+                    Use <code className="bg-blue-100 px-1 rounded">repo</code> scope for all repositories to avoid permission issues.
+                  </p>
+                </div>
+                
+                <div className="flex gap-2 flex-wrap">
                   <a 
-                    href="https://github.com/settings/tokens/new?scopes=repo,public_repo,workflow&description=AI%20Docs%20Generator" 
+                    href="https://github.com/settings/tokens/new?scopes=repo&description=AI%20Docs%20Generator%20-%20All%20Repos" 
                     target="_blank" 
                     rel="noopener noreferrer"
-                    className="text-blue-600 hover:text-blue-800 underline"
+                    className="text-blue-600 hover:text-blue-800 underline text-xs"
                   >
-                    Generate token with correct permissions →
+                    Generate token (all repos) →
                   </a>
-                </p>
+                  <a 
+                    href="https://github.com/settings/tokens/new?scopes=public_repo&description=AI%20Docs%20Generator%20-%20Public%20Only" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800 underline text-xs"
+                  >
+                    Generate token (public only) →
+                  </a>
+                </div>
               </div>
             </div>
           </div>
@@ -360,12 +400,74 @@ export default function DocsGeneratorInterface() {
               </div>
               
               {accessTestResult && (
-                <div className={`p-3 rounded-lg border ${
+                <div className={`p-4 rounded-lg border space-y-3 ${
                   accessTestResult.success 
-                    ? 'bg-green-50 border-green-200 text-green-700' 
-                    : 'bg-red-50 border-red-200 text-red-700'
+                    ? 'bg-green-50 border-green-200' 
+                    : 'bg-red-50 border-red-200'
                 }`}>
-                  <p className="text-sm font-mono">{accessTestResult.message}</p>
+                  <p className={`text-sm font-mono ${
+                    accessTestResult.success ? 'text-green-700' : 'text-red-700'
+                  }`}>
+                    {accessTestResult.message}
+                  </p>
+                  
+                  {accessTestResult.tokenScopes && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-gray-600">Current Token Scopes:</span>
+                        <div className="flex gap-1 flex-wrap">
+                          {accessTestResult.tokenScopes.map((scope, idx) => (
+                            <Badge 
+                              key={idx} 
+                              variant={accessTestResult.scopesRequired?.includes(scope) ? "default" : "secondary"}
+                              className="text-xs"
+                            >
+                              {scope}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                      
+                      {accessTestResult.scopesRequired && !accessTestResult.success && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-gray-600">Required Scopes:</span>
+                          <div className="flex gap-1 flex-wrap">
+                            {accessTestResult.scopesRequired.map((scope, idx) => (
+                              <Badge key={idx} variant="destructive" className="text-xs">
+                                {scope}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {accessTestResult.repositoryType && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-gray-600">Repository Type:</span>
+                          <Badge variant="outline" className="text-xs">
+                            {accessTestResult.repositoryType}
+                          </Badge>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
+                  {!accessTestResult.success && accessTestResult.repositoryType === 'private' && (
+                    <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded text-yellow-800">
+                      <p className="text-xs font-semibold mb-1">💡 Private Repository Fix:</p>
+                      <p className="text-xs">
+                        Your token needs the <code className="bg-yellow-100 px-1 rounded">repo</code> scope for private repositories. 
+                        <a 
+                          href="https://github.com/settings/tokens/new?scopes=repo&description=AI%20Docs%20Generator%20-%20Private%20Repos" 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="ml-1 text-yellow-900 underline hover:text-yellow-700"
+                        >
+                          Generate new token with repo scope →
+                        </a>
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -575,13 +677,48 @@ export default function DocsGeneratorInterface() {
                 
                 <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                   <h4 className="font-semibold text-yellow-800 mb-2">💡 Troubleshooting Tips:</h4>
-                  <ul className="text-sm text-yellow-700 space-y-1">
-                    <li>• Check that your GitHub token has the required permissions (repo, public_repo)</li>
-                    <li>• Verify the repository URL is correct and accessible</li>
-                    <li>• Ensure you have push access to the repository</li>
-                    <li>• For private repos, confirm your token has full repo scope</li>
-                    <li>• Try generating a new GitHub token if the current one is old</li>
+                  <ul className="text-sm text-yellow-700 space-y-2">
+                    <li className="flex items-start gap-2">
+                      <span>•</span>
+                      <div>
+                        <strong>Private Repository Issues:</strong> Ensure your token has the 
+                        <Badge variant="destructive" className="mx-1 text-xs">repo</Badge> 
+                        scope (not just <code>public_repo</code>)
+                      </div>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span>•</span>
+                      <div>
+                        <strong>Permission Denied:</strong> You need to be a collaborator with write access to the repository
+                      </div>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span>•</span>
+                      <div>
+                        <strong>Organization Repos:</strong> Check if the organization requires SSO authorization for your token
+                      </div>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span>•</span>
+                      <div>
+                        <strong>Token Issues:</strong> Try generating a new token if the current one is old or expired
+                      </div>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span>•</span>
+                      <div>
+                        <strong>Quick Fix:</strong> Use the "Test Access" button above to verify your token permissions
+                      </div>
+                    </li>
                   </ul>
+                  
+                  <div className="mt-3 p-2 bg-white border border-yellow-300 rounded">
+                    <p className="text-xs text-yellow-800">
+                      <strong>Common Issue:</strong> Many users accidentally select <code>public_repo</code> instead of <code>repo</code> 
+                      when creating tokens for private repositories. The <code>repo</code> scope includes <code>public_repo</code> 
+                      and works for all repository types.
+                    </p>
+                  </div>
                 </div>
                 
                 <div className="flex gap-4">
@@ -642,8 +779,20 @@ export default function DocsGeneratorInterface() {
                 <li>Click &quot;Personal access tokens&quot; → &quot;Tokens (classic)&quot;</li>
                 <li>Click &quot;Generate new token&quot; → &quot;Generate new token (classic)&quot;</li>
                 <li>Add description: &quot;AI Docs Generator&quot;</li>
-                <li>Select scopes: <code>repo</code>, <code>public_repo</code>, <code>workflow</code></li>
-                <li>Click &quot;Generate token&quot; and copy it</li>
+                <li className="space-y-1">
+                  <div>Select scopes based on your needs:</div>
+                  <div className="ml-4 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="destructive" className="text-xs">repo</Badge>
+                      <span className="text-xs">For private repositories (includes public_repo)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="default" className="text-xs">public_repo</Badge>
+                      <span className="text-xs">For public repositories only</span>
+                    </div>
+                  </div>
+                </li>
+                <li>Click &quot;Generate token&quot; and copy it immediately</li>
               </ol>
             </div>
           </div>

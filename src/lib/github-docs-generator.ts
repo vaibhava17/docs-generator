@@ -99,11 +99,32 @@ export class GitHubDocsGenerator {
 
   private setupAIClients(): void {
     if (this.aiConfig.provider === 'openai') {
+      if (!this.aiConfig.apiKey || !this.aiConfig.apiKey.startsWith('sk-')) {
+        console.warn('⚠️ Invalid or missing OpenAI API key. Expected format: sk-...');
+      }
       this.openaiClient = new OpenAI({
         apiKey: this.aiConfig.apiKey
       });
     } else if (this.aiConfig.provider === 'gemini') {
+      if (!this.aiConfig.apiKey || this.aiConfig.apiKey.length < 10) {
+        console.warn('⚠️ Invalid or missing Gemini API key. Please check your API key.');
+      }
       this.geminiClient = new GoogleGenerativeAI(this.aiConfig.apiKey);
+    }
+    
+    // Try to setup both clients if possible for fallback
+    try {
+      if (this.aiConfig.provider === 'openai' && process.env.GEMINI_API_KEY) {
+        this.geminiClient = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        console.log('✅ Gemini fallback client setup successful');
+      } else if (this.aiConfig.provider === 'gemini' && process.env.OPENAI_API_KEY) {
+        this.openaiClient = new OpenAI({
+          apiKey: process.env.OPENAI_API_KEY
+        });
+        console.log('✅ OpenAI fallback client setup successful');
+      }
+    } catch (error) {
+      console.log('ℹ️ No fallback AI client available');
     }
   }
 
@@ -120,7 +141,29 @@ export class GitHubDocsGenerator {
       
       console.log(`🔍 Validating access to repository: ${owner}/${cleanRepoName}`);
       
-      // First check if repository exists publicly (without token)
+      // First validate token scopes by checking user info
+      const userResponse = await fetch('https://api.github.com/user', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'docs-generator'
+        }
+      });
+      
+      if (!userResponse.ok) {
+        if (userResponse.status === 401) {
+          throw new Error(`Invalid GitHub token. Please check your token and try again.
+Token format should be: ghp_xxxxxxxxxxxxxxxxxxxx or github_pat_xxxxxxxxxx
+Generate new token at: https://github.com/settings/tokens/new`);
+        }
+        throw new Error(`Failed to validate GitHub token: ${userResponse.status} ${userResponse.statusText}`);
+      }
+      
+      // Check token scopes from headers
+      const scopes = userResponse.headers.get('x-oauth-scopes')?.split(', ') || [];
+      console.log(`🔑 Token scopes: ${scopes.join(', ')}`);
+      
+      // Check if repository exists publicly (without token)
       const publicCheck = await fetch(`https://api.github.com/repos/${owner}/${cleanRepoName}`, {
         headers: {
           'Accept': 'application/vnd.github.v3+json',
@@ -128,14 +171,37 @@ export class GitHubDocsGenerator {
         }
       });
       
-      if (!publicCheck.ok && publicCheck.status === 404) {
-        throw new Error(`Repository '${owner}/${cleanRepoName}' does not exist or is not accessible. Please check:
-- Repository name is correct (case-sensitive)
-- Repository exists at https://github.com/${owner}/${cleanRepoName}
-- If private, ensure your token has access`);
+      const isPrivateRepo = !publicCheck.ok && publicCheck.status === 404;
+      
+      // Validate token scopes based on repository type
+      if (isPrivateRepo) {
+        if (!scopes.includes('repo')) {
+          throw new Error(`This appears to be a private repository, but your GitHub token does not have the required 'repo' scope.
+
+For private repositories, you need:
+- 'repo' scope (full control of private repositories)
+
+Current token scopes: ${scopes.join(', ')}
+
+Please generate a new token with 'repo' scope at: https://github.com/settings/tokens/new`);
+        }
+      } else {
+        if (!scopes.includes('repo') && !scopes.includes('public_repo')) {
+          throw new Error(`Your GitHub token does not have the required scopes for repository access.
+
+For public repositories, you need at least:
+- 'public_repo' scope (access public repositories)
+
+For private repositories, you need:
+- 'repo' scope (full control of private repositories)
+
+Current token scopes: ${scopes.join(', ')}
+
+Please generate a new token with appropriate scopes at: https://github.com/settings/tokens/new`);
+        }
       }
       
-      // Now check with token for permissions
+      // Now check repository access with token
       const response = await fetch(`https://api.github.com/repos/${owner}/${cleanRepoName}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -147,7 +213,7 @@ export class GitHubDocsGenerator {
       if (!response.ok) {
         if (response.status === 401) {
           throw new Error(`Invalid GitHub token. Please check your token and try again.
-Token format should be: ghp_xxxxxxxxxxxxxxxxxxxx
+Token format should be: ghp_xxxxxxxxxxxxxxxxxxxx or github_pat_xxxxxxxxxx
 Generate new token at: https://github.com/settings/tokens/new`);
         } else if (response.status === 403) {
           const responseText = await response.text();
@@ -155,15 +221,21 @@ Generate new token at: https://github.com/settings/tokens/new`);
             throw new Error('GitHub API rate limit exceeded. Please wait a few minutes and try again.');
           }
           throw new Error(`GitHub token does not have sufficient permissions for this repository.
-Required permissions: repo (for private repos) or public_repo (for public repos)
+
+For private repositories: Your token needs 'repo' scope
+For public repositories: Your token needs 'public_repo' or 'repo' scope
+
+Current token scopes: ${scopes.join(', ')}
 Generate token with correct permissions at: https://github.com/settings/tokens/new`);
         } else if (response.status === 404) {
           throw new Error(`Repository access denied. This could mean:
-- Repository is private and your token doesn't have access
-- Token doesn't have the required 'repo' scope for private repositories
+- Repository is private and your token doesn't have the required 'repo' scope
+- Token doesn't have access to this specific repository
 - You need to be added as a collaborator to this repository
+- Repository name is incorrect (check case sensitivity)
 
-Repository: https://github.com/${owner}/${cleanRepoName}`);
+Repository: https://github.com/${owner}/${cleanRepoName}
+Current token scopes: ${scopes.join(', ')}`);
         } else {
           throw new Error(`GitHub API error: ${response.status} ${response.statusText}. Please try again or check GitHub status.`);
         }
@@ -175,13 +247,19 @@ Repository: https://github.com/${owner}/${cleanRepoName}`);
       
       // Check if user has push access
       if (!repoData.permissions?.push) {
+        const requiredScope = repoData.private ? 'repo' : 'public_repo';
         throw new Error(`Your GitHub token does not have push access to this repository.
 This is required to commit and push documentation changes.
 
 Please ensure:
-1. You have push/write access to the repository
-2. Your token has 'repo' scope (for private repos) or 'public_repo' scope (for public repos)
+1. You have push/write access to the repository (must be collaborator or owner)
+2. Your token has '${requiredScope}' scope ${repoData.private ? '(for private repos)' : '(for public repos)'}
 3. For organization repos, check if you're a member with write access
+4. If the organization uses SSO, authorize your token for SSO
+
+Current token scopes: ${scopes.join(', ')}
+Repository type: ${repoData.private ? 'Private' : 'Public'}
+Required scope: ${requiredScope}
 
 Generate a new token with correct permissions at: https://github.com/settings/tokens/new`);
       }
@@ -470,15 +548,10 @@ Requirements:
     } catch (error) {
       console.error(`❌ Error with ${this.aiConfig.provider} for ${fileName}:`, error);
       
-      // Try fallback AI service
+      // Try fallback AI service if the main one fails
       try {
-        if (this.aiConfig.provider === 'openai' && this.geminiClient) {
-          console.log(`🔄 Trying Gemini as backup for ${path.basename(fileName)}`);
-          const model = this.geminiClient.getGenerativeModel({ model: "gemini-1.5-flash" });
-          const response = await model.generateContent(prompt);
-          return response.response.text();
-        } else if (this.aiConfig.provider === 'gemini' && this.openaiClient) {
-          console.log(`🔄 Trying OpenAI as backup for ${path.basename(fileName)}`);
+        if (this.aiConfig.provider === 'gemini' && this.openaiClient) {
+          console.log(`🔄 Gemini failed, trying OpenAI as backup for ${path.basename(fileName)}`);
           const response = await this.openaiClient.chat.completions.create({
             model: "gpt-4o-mini",
             messages: [
@@ -495,12 +568,19 @@ Requirements:
             temperature: 0.1
           });
           return response.choices[0].message.content;
+        } else if (this.aiConfig.provider === 'openai' && this.geminiClient) {
+          console.log(`🔄 OpenAI failed, trying Gemini as backup for ${path.basename(fileName)}`);
+          const model = this.geminiClient.getGenerativeModel({ model: "gemini-1.5-flash" });
+          const response = await model.generateContent(prompt);
+          return response.response.text();
+        } else {
+          console.log(`❌ No fallback AI service available for ${fileName}`);
+          return null;
         }
       } catch (fallbackError) {
         console.error(`❌ Fallback AI service also failed for ${fileName}:`, fallbackError);
+        return null;
       }
-      
-      return null;
     }
   }
 
