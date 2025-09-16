@@ -1,277 +1,205 @@
-# GitHub Documentation Generator
+# 🤖 AI Documentation Generator
 
-An AI-powered documentation generator that automatically creates comprehensive documentation for GitHub repositories using OpenAI GPT or Google Gemini.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-15.x-black)](https://nextjs.org/)
 
-## Features
+> Automatically generate comprehensive documentation for any GitHub repository using AI. Supports OpenAI GPT and Google Gemini for intelligent code analysis and documentation generation.
 
-- 🤖 **AI-Powered**: Uses OpenAI GPT-4 or Google Gemini to generate high-quality documentation
-- 🔗 **GitHub Integration**: Works with both public and private GitHub repositories
-- 🌿 **Branch Management**: Creates documentation in a separate branch
-- 📁 **Smart File Detection**: Automatically finds and processes source code files
-- 📋 **Index Generation**: Creates a comprehensive documentation index
-- 🔄 **Update Support**: Can update existing documentation or create new docs
-- 🎯 **Selective Processing**: Target specific directories or entire repositories
+**🌐 Live Demo:** [https://docs-generator-phi.vercel.app](https://docs-generator-phi.vercel.app)
 
-## Supported File Types
+## ✨ Features
 
-- **JavaScript/TypeScript**: `.js`, `.jsx`, `.ts`, `.tsx`
-- **Python**: `.py`
-- **Java**: `.java`
-- **C/C++**: `.cpp`, `.c`, `.cc`, `.cxx`
-- **Go**: `.go`
-- **Rust**: `.rs`
-- **PHP**: `.php`
-- **Ruby**: `.rb`
-- **C#**: `.cs`
-- **Swift**: `.swift`
-- **Kotlin**: `.kt`
-- **Scala**: `.scala`
-- **Vue**: `.vue`
-- **Svelte**: `.svelte`
+- 🚀 **One-click Documentation**: Generate comprehensive docs for any GitHub repository
+- 🧠 **AI-Powered Analysis**: Uses OpenAI GPT or Google Gemini for intelligent code understanding
+- 📚 **Multi-Language Support**: JavaScript, TypeScript, Python, Java, C++, Go, Rust, PHP, Ruby, C#, Swift, Kotlin, Scala, Vue, Svelte, and more
+- 🎨 **Beautiful Web Interface**: Modern, responsive UI built with Next.js and Tailwind CSS
+- 📋 **CLI Tool**: Command-line interface for automated workflows
+- 🔒 **Private Repository Support**: Works with private repos using GitHub tokens
+- 📄 **Markdown Output**: Clean, professional documentation in Markdown format
+- ⚡ **Fast & Efficient**: Optimized for large codebases with smart file filtering
 
-## Installation
+## 🚀 Quick Start
 
-1. **Clone this repository**:
-   ```bash
-   git clone https://github.com/your-username/docs-generator.git
-   cd docs-generator
-   ```
-
-2. **Install dependencies**:
-   ```bash
-   npm install
-   ```
-
-3. **Set up environment variables**:
-   ```bash
-   npm run docs:setup
-   ```
-   
-   Or manually create a `.env` file:
-   ```env
-   # Choose your preferred AI provider
-   OPENAI_API_KEY=your_openai_api_key_here
-   GEMINI_API_KEY=your_gemini_api_key_here
-   PREFERRED_AI=openai  # or gemini
-   ```
-
-## Quick Start
-
-### 1. Setup API Keys
+### 1. Clone and Install
 
 ```bash
-npm run docs:setup
+git clone https://github.com/vaibhava17/docs-generator.git
+cd docs-generator
+npm install
 ```
 
-This will create a `.env` file template. Add your API keys:
+### 2. Environment Setup
 
-- **OpenAI**: Get your key at [https://platform.openai.com/api-keys](https://platform.openai.com/api-keys)
-- **Gemini**: Get your key at [https://makersuite.google.com/app/apikey](https://makersuite.google.com/app/apikey)
+Create a `.env` file in the root directory:
 
-### 2. Generate Documentation
+```env
+# Site Configuration
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
 
-**For a public repository**:
-```bash
-npm run docs:generate https://github.com/owner/repo
+# AI API Keys (Choose one or both)
+OPENAI_API_KEY=your_openai_api_key_here
+GEMINI_API_KEY=your_gemini_api_key_here
+
+# Preferred AI Provider (openai or gemini)
+PREFERRED_AI=openai
+
+# GitHub Token (for private repositories)
+GITHUB_TOKEN=your_github_token_here
 ```
 
-**For a private repository**:
-```bash
-npm run docs:generate https://github.com/owner/repo --token your_github_token
-```
-
-**With custom options**:
-```bash
-npm run docs:generate https://github.com/owner/repo \
-  --path src \
-  --branch documentation \
-  --provider gemini \
-  --overwrite
-```
-
-## CLI Commands
-
-### Generate Documentation
+### 3. Run the Application
 
 ```bash
-npm run docs:generate <repo-url> [options]
-```
-
-**Options:**
-- `-t, --token <token>` - GitHub Personal Access Token for private repos
-- `-p, --path <path>` - Target directory to document (default: entire repo)
-- `-b, --branch <branch>` - Branch name for documentation (default: docs-generation)
-- `--provider <provider>` - AI provider: openai or gemini (default: openai)
-- `--api-key <key>` - AI API key (or use environment variable)
-- `--overwrite` - Overwrite existing documentation files
-- `-f, --force` - Skip confirmation prompts
-- `-l, --list-files` - List files that would be documented without generating
-
-### Examples
-
-**Document entire repository**:
-```bash
-npm run docs:generate https://github.com/facebook/react
-```
-
-**Document specific directory**:
-```bash
-npm run docs:generate https://github.com/vercel/next.js --path packages/next
-```
-
-**Use private repository with token**:
-```bash
-npm run docs:generate https://github.com/company/private-repo --token ghp_xxxxxxxxxxxx
-```
-
-**Use Gemini instead of OpenAI**:
-```bash
-npm run docs:generate https://github.com/owner/repo --provider gemini
-```
-
-**List files without generating docs**:
-```bash
-npm run docs:generate https://github.com/owner/repo --list-files
-```
-
-**Overwrite existing documentation**:
-```bash
-npm run docs:generate https://github.com/owner/repo --overwrite
-```
-
-### Setup Environment
-
-```bash
-npm run docs:setup
-```
-
-Creates a `.env` file template with instructions for adding your API keys.
-
-## How It Works
-
-1. **Repository Cloning**: Clones the specified GitHub repository to a temporary directory
-2. **Branch Creation**: Creates a new branch (default: `docs-generation`) for documentation
-3. **File Discovery**: Scans the repository for supported source code files
-4. **AI Analysis**: Uses AI to analyze each file and generate comprehensive documentation
-5. **Documentation Creation**: Saves documentation as Markdown files in a `docs/` directory
-6. **Index Generation**: Creates a `DOCUMENTATION_INDEX.md` with links to all documentation
-7. **Git Operations**: Commits and pushes the documentation to the specified branch
-8. **Cleanup**: Removes temporary files
-
-## Documentation Structure
-
-The generator creates documentation with the following structure:
-
-```
-docs/
-├── src/
-│   ├── components/
-│   │   ├── Button.md
-│   │   └── Modal.md
-│   ├── utils/
-│   │   └── helpers.md
-│   └── index.md
-└── DOCUMENTATION_INDEX.md
-```
-
-Each documentation file includes:
-
-- **Overview**: High-level explanation of the file's purpose
-- **Functions and Classes**: Detailed documentation of exports
-- **Configuration**: Important constants and settings
-- **Usage Examples**: Practical usage patterns
-- **Dependencies**: Integration with other parts of the codebase
-- **Additional Notes**: Best practices and implementation details
-
-## Environment Variables
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `OPENAI_API_KEY` | OpenAI API key for GPT models | One of OpenAI or Gemini |
-| `GEMINI_API_KEY` | Google Gemini API key | One of OpenAI or Gemini |
-| `PREFERRED_AI` | Preferred AI provider (`openai` or `gemini`) | No (default: openai) |
-
-## GitHub Token Setup
-
-For private repositories, you need a GitHub Personal Access Token:
-
-1. Go to [GitHub Settings > Developer settings > Personal access tokens](https://github.com/settings/tokens)
-2. Click "Generate new token (classic)"
-3. Select scopes: `repo` (for private repos) or `public_repo` (for public repos)
-4. Use the token with the `--token` option
-
-## Error Handling
-
-The tool includes comprehensive error handling:
-
-- **Network Issues**: Automatic retries for network failures
-- **API Rate Limits**: Built-in rate limiting to respect AI API limits
-- **File Processing**: Skips problematic files and continues processing
-- **Git Operations**: Handles branch conflicts and push failures
-- **Cleanup**: Always cleans up temporary files, even on errors
-
-## Limitations
-
-- **File Size**: Skips files larger than 50KB to manage AI token limits
-- **Binary Files**: Only processes text-based source code files
-- **API Costs**: AI API calls have associated costs (see provider pricing)
-- **Rate Limits**: Respects AI API rate limits with built-in delays
-
-## Troubleshooting
-
-### Common Issues
-
-**"Invalid GitHub repository URL"**
-- Ensure URL format: `https://github.com/owner/repo`
-- Don't include `.git` suffix
-
-**"API key not found"**
-- Check your `.env` file has the correct API key
-- Use `npm run docs:setup` to verify configuration
-
-**"Permission denied" for private repos**
-- Ensure GitHub token has correct permissions
-- Use `--token` option with a valid Personal Access Token
-
-**"No source files found"**
-- Check the `--path` option points to a valid directory
-- Verify the repository contains supported file types
-
-### Debug Mode
-
-For detailed error information, check the console output. The tool provides comprehensive logging of all operations.
-
-## Next.js Web Interface
-
-This project also includes a Next.js web interface for easier usage:
-
-```bash
+# Development server
 npm run dev
+
+# Or use the CLI directly
+npm run docs:generate https://github.com/username/repository
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to access the web interface.
+## 📖 Usage
 
-## Contributing
+### Web Interface
+
+1. Open [http://localhost:3000](http://localhost:3000) in your browser
+2. Enter a GitHub repository URL
+3. Configure AI provider and settings
+4. Click "Generate Documentation"
+5. Download the generated docs as a ZIP file
+
+### CLI Usage
+
+```bash
+# Interactive setup
+npm run docs:setup
+
+# Generate documentation
+npm run docs:generate <repository-url>
+
+# Build CLI tool
+npm run build:cli
+```
+
+## 🛠️ API Configuration
+
+### OpenAI Setup
+
+1. Get an API key from [OpenAI Platform](https://platform.openai.com/api-keys)
+2. Add to your `.env` file: `OPENAI_API_KEY=sk-...`
+
+### Google Gemini Setup
+
+1. Get an API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
+2. Add to your `.env` file: `GEMINI_API_KEY=...`
+
+### GitHub Token (Optional)
+
+For private repositories or higher rate limits:
+
+1. Create a [Personal Access Token](https://github.com/settings/tokens)
+2. Grant repository access permissions
+3. Add to your `.env` file: `GITHUB_TOKEN=ghp_...`
+
+## 🏗️ Development
+
+### Prerequisites
+
+- Node.js 18 or higher
+- npm or yarn
+- An AI API key (OpenAI or Google Gemini)
+
+### Local Development
+
+```bash
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+
+# Build for production
+npm run build
+
+# Run linting
+npm run lint
+
+# Build CLI tool
+npm run build:cli
+```
+
+### Project Structure
+
+```
+src/
+├── app/                    # Next.js app router
+│   ├── api/               # API routes
+│   ├── (pages)/           # App pages
+│   └── globals.css        # Global styles
+├── components/            # React components
+├── lib/                   # Utilities and services
+└── cli/                   # CLI implementation
+```
+
+## 🤝 Contributing
+
+We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
+
+### How to Contribute
 
 1. Fork the repository
-2. Create a feature branch: `git checkout -b feature-name`
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
 3. Make your changes
-4. Run tests: `npm test`
-5. Commit changes: `git commit -am 'Add feature'`
-6. Push to branch: `git push origin feature-name`
-7. Submit a Pull Request
+4. Add tests if applicable
+5. Commit your changes: `git commit -m 'Add amazing feature'`
+6. Push to the branch: `git push origin feature/amazing-feature`
+7. Open a Pull Request
 
-## License
+## 📝 License
 
-MIT License - see LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Security
+## 🙋‍♂️ Support
 
-- Never commit your `.env` file to version control
-- Keep your API keys secure and private
-- Use minimal GitHub token permissions
-- Review generated documentation before merging
+- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/vaibhava17/docs-generator/issues)
+- 💬 **Discussions**: [GitHub Discussions](https://github.com/vaibhava17/docs-generator/discussions)
+- 📧 **Questions**: Open an issue with the "question" label
 
-## Support
+## 🌟 Show Your Support
 
-For issues and feature requests, please create an issue on GitHub.
+If this project helped you, please give it a ⭐ on GitHub and share it with others!
+
+## 📊 Supported Languages
+
+| Language | Extension | Status |
+|----------|-----------|---------|
+| JavaScript | `.js` | ✅ |
+| TypeScript | `.ts`, `.tsx` | ✅ |
+| Python | `.py` | ✅ |
+| Java | `.java` | ✅ |
+| C++ | `.cpp`, `.h` | ✅ |
+| Go | `.go` | ✅ |
+| Rust | `.rs` | ✅ |
+| PHP | `.php` | ✅ |
+| Ruby | `.rb` | ✅ |
+| C# | `.cs` | ✅ |
+| Swift | `.swift` | ✅ |
+| Kotlin | `.kt` | ✅ |
+| Scala | `.scala` | ✅ |
+| Vue | `.vue` | ✅ |
+| Svelte | `.svelte` | ✅ |
+
+## 🔮 Roadmap
+
+- [ ] Syntax highlighting in generated docs
+- [ ] Custom documentation templates
+- [ ] Integration with popular documentation platforms
+- [ ] Support for more file types
+- [ ] Automated documentation updates
+- [ ] Team collaboration features
+
+---
+
+<p align="center">
+  Made with ❤️ by <a href="https://github.com/vaibhava17">vaibhava17</a>
+</p>
